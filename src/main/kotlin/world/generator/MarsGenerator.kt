@@ -1,42 +1,32 @@
 package io.poin.game.world.generator
 
 import de.articdive.jnoise.generators.noisegen.opensimplex.FastSimplexNoiseGenerator
-import net.minestom.server.instance.block.Block
-import net.minestom.server.instance.generator.GenerationUnit
-import net.minestom.server.coordinate.Pos
-import net.minestom.server.instance.generator.Generator
-import kotlin.random.Random
 import de.articdive.jnoise.generators.noisegen.perlin.PerlinNoiseGenerator
-import de.articdive.jnoise.modules.octavation.fractal_functions.FractalFunction
 import de.articdive.jnoise.pipeline.JNoise
 import io.poin.game.world.features.NoiseFeature
 import io.poin.game.world.selectors.BlockSelector
-import io.poin.game.world.utils.AbsClampNoiseModifier
 import net.minestom.server.coordinate.Point
-import kotlin.math.abs
+import net.minestom.server.coordinate.Pos
+import net.minestom.server.instance.block.Block
+import net.minestom.server.instance.generator.GenerationUnit
+import kotlin.math.max
+import kotlin.random.Random
 
-class MarsGenerator : Generator {
-    val absModifier = AbsClampNoiseModifier()
-
+class MarsGenerator : AbstractTerrainGenerator() {
     private val baseNoise: NoiseFeature = NoiseFeature(
         JNoise.newBuilder()
             .perlin(PerlinNoiseGenerator.newBuilder().build())
-            .scale(0.002)
-            .octavate(5, 0.5, 2.2, FractalFunction.FBM, false)
-            .addModifier(absModifier::apply)
+            .scale(0.001)
             .build(),
         scale = 128.0,
         offset = 64.0,
-        name = "Base Terrain"
+        name = "Base Terrain",
     )
 
     private val craterNoise: NoiseFeature = NoiseFeature(
         JNoise.newBuilder()
             .fastSimplex(FastSimplexNoiseGenerator.newBuilder().build())
             .scale(0.01)
-            .octavate(5, 0.3, 3.0, FractalFunction.FBM, false)
-            .addModifier(absModifier::apply)
-            .invert()
             .build(),
         scale = 20.0,
         name = "Crater"
@@ -44,76 +34,90 @@ class MarsGenerator : Generator {
 
     private val roughnessNoise: NoiseFeature = NoiseFeature(
         JNoise.newBuilder()
-            .perlin(PerlinNoiseGenerator.newBuilder().build())
+            .fastSimplex(FastSimplexNoiseGenerator.newBuilder().build())
             .scale(0.05)
             .build(),
         scale = 3.0,
         name = "Surface Roughness"
     )
 
-    override fun generate(unit: GenerationUnit) {
-        val start: Point = unit.absoluteStart()
-        val heightMap = mutableMapOf<Pair<Int, Int>, Double>()
+    private val latitudeNoise: FastSimplexNoiseGenerator = FastSimplexNoiseGenerator.newBuilder().build()
 
-        // First pass: Generate height map
-        for (x in -1..unit.size().x().toInt()) {
-            for (z in -1..unit.size().z().toInt()) {
-                val worldX = x + start.x()
-                val worldZ = z + start.z()
-                heightMap[Pair(x, z)] = calculateHeight(worldX, worldZ)
-            }
-        }
-
-        // Second pass: Generate terrain and features
-        for (x in 0 until unit.size().x().toInt()) {
-            for (z in 0 until unit.size().z().toInt()) {
-                val worldX = x + start.x()
-                val worldZ = z + start.z()
-                var height = heightMap[Pair(x, z)] ?: continue
-
-                // Apply crater effect
-                val craterDepth = craterNoise.apply(worldX, worldZ)
-                height -= craterDepth.coerceAtLeast(0.0)
-
-                // Fill from bedrock to surface
-                for (y in 0..height.toInt()) {
-                    val pos = Pos(worldX, y.toDouble(), worldZ)
-                    val block = when {
-                        y == 0 -> Block.BEDROCK
-                        y < height - 5 -> Block.RED_SANDSTONE
-                        y < height -> Block.RED_SAND
-                        y == height.toInt() && craterDepth > 10 -> Block.STONE // Exposed bedrock in deep craters
-                        else -> Block.RED_SAND
-                    }
-                    unit.modifier().setBlock(pos, block)
-                }
-
+    override val blockSelector: BlockSelector = object : BlockSelector {
+        override fun selectBlock(height: Double, x: Double, z: Double): Block {
+            return when {
+                height < 60 -> Block.BEDROCK
+                height < 65 -> Block.RED_SANDSTONE
+                height < 128 -> Block.RED_SAND
+                else -> Block.TERRACOTTA
             }
         }
     }
 
-    private fun calculateHeight(x: Double, z: Double): Double {
+    init {
+
+        addFeature(baseNoise)
+        addFeature(craterNoise)
+        addFeature(roughnessNoise)
+    }
+
+    override fun calculateHeight(x: Double, z: Double): Double {
         return baseNoise.apply(x, z) + roughnessNoise.apply(x, z)
     }
 
-    private fun addRock(unit: GenerationUnit, pos: Pos) {
+    override fun adjustHeight(x: Double, z: Double, height: Double): Double {
+        val craterDepth = craterNoise.apply(x, z)
+        return max(height - craterDepth.coerceAtLeast(0.0), 1.0) // Ensure minimum height of 1
+    }
+
+    override fun generateTerrain(unit: GenerationUnit, pos: Pos, height: Double, start: Point, end: Point) {
+        super.generateTerrain(unit, pos, height, start, end)
+
+        // Add exposed bedrock in deep craters
+        if (craterNoise.apply(pos.x(), pos.z()) > 10) {
+            val surfacePos = Pos(pos.x(), height, pos.z())
+            if (isWithinBounds(surfacePos, start, end)) {
+                unit.modifier().setBlock(surfacePos, Block.STONE)
+            }
+        }
+    }
+
+    override fun addFeatures(unit: GenerationUnit, pos: Pos, start: Point, end: Point) {
+        if (Random.nextDouble() < 0.01) {
+            when (Random.nextInt(3)) {
+                0 -> addMushroom(unit, pos, start, end)
+                1 -> addDeadBush(unit, pos, start, end)
+                2 -> addRock(unit, pos, start, end)
+            }
+        }
+    }
+
+    private fun addMushroom(unit: GenerationUnit, pos: Pos, start: Point, end: Point) {
+        val mushroomPos = pos.add(0.0, 1.0, 0.0)
+        if (isWithinBounds(mushroomPos, start, end)) {
+            unit.modifier().setBlock(mushroomPos, Block.RED_MUSHROOM_BLOCK)
+        }
+    }
+
+    private fun addDeadBush(unit: GenerationUnit, pos: Pos, start: Point, end: Point) {
+        val bushPos = pos.add(0.0, 1.0, 0.0)
+        if (isWithinBounds(bushPos, start, end)) {
+            unit.modifier().setBlock(bushPos, Block.DEAD_BUSH)
+        }
+    }
+
+    private fun addRock(unit: GenerationUnit, pos: Pos, start: Point, end: Point) {
         val rockHeight = Random.nextInt(1, 4)
         for (y in 0 until rockHeight) {
             for (x in -1..1) {
                 for (z in -1..1) {
                     if (Random.nextDouble() < 0.7) {
-                        unit.modifier().setBlock(pos.add(x.toDouble(), y.toDouble(), z.toDouble()), Block.STONE)
+                        val rockPos = pos.add(x.toDouble(), y + 1.0, z.toDouble())
+                        if (isWithinBounds(rockPos, start, end)) {
+                            unit.modifier().setBlock(rockPos, Block.STONE)
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    private fun addDustStorm(unit: GenerationUnit, pos: Pos) {
-        val stormHeight = Random.nextInt(5, 15)
-        for (y in 0 until stormHeight) {
-            if (Random.nextDouble() < 0.3) {
-                unit.modifier().setBlock(pos.add(0.0, y.toDouble(), 0.0), Block.BROWN_STAINED_GLASS_PANE)
             }
         }
     }

@@ -20,11 +20,11 @@ fun main() {
     val instanceManager = MinecraftServer.getInstanceManager()
 
     val instanceContainer = instanceManager.createInstanceContainer()
-
+    val marsGenerator = MarsGenerator()
 
     instanceContainer.setChunkSupplier(::LightingChunk)
     println("- Light added")
-    instanceContainer.setGenerator(MarsGenerator())
+    instanceContainer.setGenerator(marsGenerator)
     println("- Generator added")
     instanceContainer.timeRate = 0;
     println("- Time rate set to 0")
@@ -35,7 +35,13 @@ fun main() {
         val player: Player = event.player
         event.spawningInstance = instanceContainer
 
-        player.respawnPoint = Pos(-13.0, 120.0, 48.0)
+        player.respawnPoint = marsGenerator.calculateSpawnPosition(
+            searchRadius = 1000,
+            minHeight = 70.0,
+            maxHeight = 100.0,
+            maxSlope = 0.3
+        )!!
+
         println("Player spawn point set to: ${player.respawnPoint}")
     }
 
@@ -50,6 +56,7 @@ fun main() {
 
         player.setGameMode(GameMode.CREATIVE)
         player.permissionLevel = 4
+        marsGenerator.debugVisualize(player, player.position.chunkX(), player.position.chunkZ())
     }
 
     val inventory = Inventory(InventoryType.CHEST_6_ROW, Component.text("Container"))
