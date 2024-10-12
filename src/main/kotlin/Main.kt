@@ -1,5 +1,6 @@
 package io.poin.game
 
+import io.poin.game.commands.ChunkCommand
 import io.poin.game.world.generator.MarsGenerator
 import net.kyori.adventure.text.Component
 import net.minestom.server.MinecraftServer
@@ -59,6 +60,7 @@ fun main() {
         marsGenerator.debugVisualize(player, player.position.chunkX(), player.position.chunkZ())
     }
 
+    MinecraftServer.getCommandManager().register(ChunkCommand())
     val inventory = Inventory(InventoryType.CHEST_6_ROW, Component.text("Container"))
 
     globalEventHandler.addListener(

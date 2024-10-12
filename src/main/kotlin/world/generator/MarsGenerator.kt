@@ -5,6 +5,7 @@ import de.articdive.jnoise.generators.noisegen.perlin.PerlinNoiseGenerator
 import de.articdive.jnoise.pipeline.JNoise
 import io.poin.game.world.features.NoiseFeature
 import io.poin.game.world.selectors.BlockSelector
+import io.poin.game.world.utils.AbsClampNoiseModifier
 import net.minestom.server.coordinate.Point
 import net.minestom.server.coordinate.Pos
 import net.minestom.server.instance.block.Block
@@ -13,10 +14,12 @@ import kotlin.math.max
 import kotlin.random.Random
 
 class MarsGenerator : AbstractTerrainGenerator() {
+    val absModifier = AbsClampNoiseModifier()
     private val baseNoise: NoiseFeature = NoiseFeature(
         JNoise.newBuilder()
             .perlin(PerlinNoiseGenerator.newBuilder().build())
             .scale(0.001)
+            .addModifier(absModifier::apply)
             .build(),
         scale = 128.0,
         offset = 64.0,
@@ -26,7 +29,8 @@ class MarsGenerator : AbstractTerrainGenerator() {
     private val craterNoise: NoiseFeature = NoiseFeature(
         JNoise.newBuilder()
             .fastSimplex(FastSimplexNoiseGenerator.newBuilder().build())
-            .scale(0.01)
+            .scale(0.009)
+            .addModifier(absModifier::apply)
             .build(),
         scale = 20.0,
         name = "Crater"
